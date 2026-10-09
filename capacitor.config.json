@@ -1,0 +1,13 @@
+{
+  "appId": "com.marksix.research",
+  "appName": "开奖统计看板",
+  "webDir": "dist",
+  "server": {
+    "url": "https://marksix-research.eggmarket-qy.workers.dev",
+    "cleartext": false,
+    "androidScheme": "https"
+  },
+  "android": {
+    "allowMixedContent": false
+  }
+}
