@@ -1,0 +1,147 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1">
+<title>开奖数据统计看板</title>
+<style>
+*{box-sizing:border-box}
+body{margin:0;background:#0f1115;color:#e6e8ee;font:15px/1.6 -apple-system,BlinkMacSystemFont,"PingFang SC","Microsoft YaHei",sans-serif;padding:16px 14px 60px;max-width:760px;margin:0 auto}
+h1{font-size:19px;margin:0 0 4px}
+.sub{color:#9aa3b2;font-size:12.5px;margin:0 0 18px}
+.card{background:#171a21;border:1px solid #252a34;border-radius:12px;padding:14px 16px;margin-bottom:12px}
+.card h2{font-size:14px;margin:0 0 10px;color:#c7d5ee}
+.kv{display:flex;justify-content:space-between;padding:5px 0;border-bottom:1px solid #22262f;font-size:13.5px}
+.kv:last-child{border:0}
+.kv span:first-child{color:#9aa3b2}
+.grid{display:grid;grid-template-columns:repeat(7,1fr);gap:5px}
+.cell{aspect-ratio:1;display:flex;align-items:center;justify-content:center;border-radius:6px;font-size:12px;font-weight:600;color:#fff}
+.warn{background:rgba(255,92,92,.1);border:1px solid rgba(255,92,92,.35);border-radius:10px;padding:11px 14px;margin-bottom:12px;font-size:13px;color:#ffb3b3}
+.ok{background:rgba(62,207,142,.08);border:1px solid rgba(62,207,142,.3);border-radius:10px;padding:11px 14px;margin-bottom:12px;font-size:13px;color:#9fe8c6}
+.bar{height:18px;border-radius:4px;background:linear-gradient(90deg,#4f8cff,#7aa9ff);margin:3px 0}
+.row{display:flex;align-items:center;gap:8px;font-size:12.5px;margin-bottom:5px}
+.num{width:26px;text-align:right;color:#9aa3b2;font-variant-numeric:tabular-nums}
+.loading{text-align:center;color:#6f7889;padding:40px 0;font-size:13px}
+table{width:100%;border-collapse:collapse;font-size:12.5px}
+th,td{padding:5px 6px;text-align:left;border-bottom:1px solid #22262f}
+th{color:#9aa3b2;font-weight:500}
+.ball{display:inline-block;width:22px;height:22px;line-height:22px;text-align:center;border-radius:50%;font-size:11px;font-weight:600;color:#fff;margin-right:3px}
+</style>
+</head>
+<body>
+<h1>开奖数据统计看板</h1>
+<p class="sub">描述性统计与随机性检验 · 数据随页面内置，无需联网请求接口</p>
+<div id="app"><div class="loading">加载中…</div></div>
+
+<script>
+const CRIT = 65.17; // 卡方临界值 df=48, α=0.05
+
+async function main() {
+  const recs = await fetch('history.json').then(r => r.json());
+  recs.sort((a, b) => a.period - b.period);
+
+  const periods = recs.map(r => r.period);
+  const n = recs.length;
+
+  // 期号缺口
+  const gaps = [];
+  for (let i = 1; i < periods.length; i++) {
+    const d = periods[i] - periods[i - 1];
+    if (d > 1) gaps.push({ from: periods[i - 1], to: periods[i], missing: d - 1 });
+  }
+
+  // 最近连续段（遗漏值只在段内计算）
+  let segStart = 0;
+  for (let i = 1; i < periods.length; i++) {
+    if (periods[i] - periods[i - 1] > 1) segStart = i;
+  }
+  const cont = recs.slice(segStart);
+
+  const freq = new Array(50).fill(0);
+  recs.forEach(r => [...r.mains, r.special].forEach(x => freq[x]++));
+
+  const lastSeen = new Array(50).fill(-1);
+  cont.forEach((r, i) => [...r.mains, r.special].forEach(x => lastSeen[x] = i));
+  const miss = new Array(50).fill(0);
+  for (let k = 1; k <= 49; k++) miss[k] = lastSeen[k] === -1 ? cont.length : cont.length - 1 - lastSeen[k];
+
+  const r30 = new Array(50).fill(0);
+  recs.slice(-30).forEach(r => [...r.mains, r.special].forEach(x => r30[x]++));
+
+  const expected = n * 7 / 49;
+  let chi2 = 0;
+  for (let k = 1; k <= 49; k++) { const d = freq[k] - expected; chi2 += d * d / expected; }
+
+  const nums = [];
+  for (let k = 1; k <= 49; k++) nums.push({ number: k, total: freq[k], r30: r30[k], miss: miss[k] });
+
+  const app = document.getElementById('app');
+  let h = '';
+
+  h += `<div class="card"><h2>数据概况</h2>
+    <div class="kv"><span>总期数</span><span>${n}</span></div>
+    <div class="kv"><span>期号范围</span><span>${periods[0]} – ${periods[n - 1]}</span></div>
+    <div class="kv"><span>期望频次/号</span><span>${expected.toFixed(2)}</span></div>
+    <div class="kv"><span>遗漏统计窗口</span><span>第 ${cont[0].period} 期起（${cont.length} 期）</span></div>
+  </div>`;
+
+  if (gaps.length) {
+    h += `<div class="warn"><b>期号缺口：</b>` + gaps.map(g => `第 ${g.from + 1}–${g.to - 1} 期缺失（${g.missing} 期）`).join('；') +
+      `<br>遗漏值仅在最近连续段内计算，缺口前记录不参与</div>`;
+  } else {
+    h += `<div class="ok">期号连续，无缺口</div>`;
+  }
+
+  h += `<div class="card"><h2>卡方拟合优度检验</h2>
+    <div class="kv"><span>χ² 统计量</span><span>${chi2.toFixed(2)}</span></div>
+    <div class="kv"><span>自由度 df</span><span>48</span></div>
+    <div class="kv"><span>临界值 (α=0.05)</span><span>${CRIT}</span></div>
+  </div>`;
+  h += chi2 > CRIT
+    ? `<div class="warn">χ² &gt; ${CRIT}，<b>拒绝</b>「各号码等概率」的原假设（α=0.05）。</div>`
+    : `<div class="ok">χ² ≤ ${CRIT}，<b>不拒绝</b>「各号码等概率」的原假设（α=0.05）——样本内未检出显著偏离。</div>`;
+
+  const maxF = Math.max(...nums.map(x => x.total)), minF = Math.min(...nums.map(x => x.total));
+  h += `<div class="card"><h2>号码频次热力图（越高频越亮）</h2><div class="grid">`;
+  nums.forEach(f => {
+    const t = maxF === minF ? .5 : (f.total - minF) / (maxF - minF);
+    h += `<div class="cell" style="background:rgba(79,140,255,${(0.18 + t * 0.82).toFixed(3)})" title="出现 ${f.total} 次">${f.number}</div>`;
+  });
+  h += `</div></div>`;
+
+  const missTop = [...nums].sort((a, b) => b.miss - a.miss).slice(0, 10);
+  const maxM = Math.max(...missTop.map(x => x.miss)) || 1;
+  h += `<div class="card"><h2>遗漏期数 TOP 10</h2>`;
+  missTop.forEach(f => {
+    h += `<div class="row"><span class="num">${f.number}</span><div class="bar" style="width:${(f.miss / maxM * 100).toFixed(1)}%;min-width:4px"></div><span>${f.miss} 期</span></div>`;
+  });
+  h += `</div>`;
+
+  const r30Top = [...nums].sort((a, b) => b.r30 - a.r30).slice(0, 10);
+  const maxR = Math.max(...r30Top.map(x => x.r30)) || 1;
+  h += `<div class="card"><h2>近 30 期频次 TOP 10</h2>`;
+  r30Top.forEach(f => {
+    h += `<div class="row"><span class="num">${f.number}</span><div class="bar" style="width:${(f.r30 / maxR * 100).toFixed(1)}%;min-width:4px;background:linear-gradient(90deg,#3ecf8e,#7ae0b4)"></div><span>${f.r30} 次</span></div>`;
+  });
+  h += `</div>`;
+
+  const recent = recs.slice(-15).reverse();
+  h += `<div class="card"><h2>最近 15 期</h2><table><tr><th>期号</th><th>日期</th><th>号码</th></tr>`;
+  recent.forEach(r => {
+    const balls = r.mains.map(m => `<span class="ball" style="background:#4f8cff">${m}</span>`).join('') +
+      `<span class="ball" style="background:#e0533d">${r.special}</span>`;
+    h += `<tr><td>${r.period}</td><td>${r.date}</td><td>${balls}</td></tr>`;
+  });
+  h += `</table></div>`;
+
+  h += `<div class="card"><h2>说明</h2><p style="font-size:12.5px;color:#9aa3b2;margin:0">开奖为独立随机事件，历史频次与遗漏值对未来结果不具预测力。本页仅呈现描述性统计与假设检验结果，不产出任何投注推荐。</p></div>`;
+
+  app.innerHTML = h;
+}
+
+main().catch(e => {
+  document.getElementById('app').innerHTML = `<div class="warn">加载失败：${e.message}</div>`;
+});
+</script>
+</body>
+</html>
