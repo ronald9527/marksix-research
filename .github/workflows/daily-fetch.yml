@@ -1,0 +1,44 @@
+name: 每日自动抓取开奖
+
+on:
+  schedule:
+    # UTC 14:00 = 北京时间 22:00
+    - cron: '0 14 * * *'
+  workflow_dispatch:
+
+jobs:
+  fetch:
+    runs-on: ubuntu-latest
+    permissions:
+      contents: write
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Setup Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: '3.11'
+
+      - name: 抓取并合并
+        run: python3 scripts/fetch.py
+
+      - name: 检查是否有新数据
+        id: check
+        run: |
+          if git diff --quiet docs/history.json; then
+            echo "changed=false" >> $GITHUB_OUTPUT
+            echo "无新期号"
+          else
+            echo "changed=true" >> $GITHUB_OUTPUT
+            echo "检测到新期号"
+          fi
+
+      - name: 提交更新
+        if: steps.check.outputs.changed == 'true'
+        run: |
+          git config user.name "github-actions[bot]"
+          git config user.email "github-actions[bot]@users.noreply.github.com"
+          git add docs/history.json
+          git commit -m "chore: 自动同步开奖记录 $(date -u +'%Y-%m-%d %H:%M UTC')"
+          git push
