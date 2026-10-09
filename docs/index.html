@@ -1,147 +1,290 @@
 <!DOCTYPE html>
 <html lang="zh-CN">
 <head>
-<meta charset="utf-8">
-<meta name="viewport" content="width=device-width,initial-scale=1">
-<title>开奖数据统计看板</title>
-<style>
-*{box-sizing:border-box}
-body{margin:0;background:#0f1115;color:#e6e8ee;font:15px/1.6 -apple-system,BlinkMacSystemFont,"PingFang SC","Microsoft YaHei",sans-serif;padding:16px 14px 60px;max-width:760px;margin:0 auto}
-h1{font-size:19px;margin:0 0 4px}
-.sub{color:#9aa3b2;font-size:12.5px;margin:0 0 18px}
-.card{background:#171a21;border:1px solid #252a34;border-radius:12px;padding:14px 16px;margin-bottom:12px}
-.card h2{font-size:14px;margin:0 0 10px;color:#c7d5ee}
-.kv{display:flex;justify-content:space-between;padding:5px 0;border-bottom:1px solid #22262f;font-size:13.5px}
-.kv:last-child{border:0}
-.kv span:first-child{color:#9aa3b2}
-.grid{display:grid;grid-template-columns:repeat(7,1fr);gap:5px}
-.cell{aspect-ratio:1;display:flex;align-items:center;justify-content:center;border-radius:6px;font-size:12px;font-weight:600;color:#fff}
-.warn{background:rgba(255,92,92,.1);border:1px solid rgba(255,92,92,.35);border-radius:10px;padding:11px 14px;margin-bottom:12px;font-size:13px;color:#ffb3b3}
-.ok{background:rgba(62,207,142,.08);border:1px solid rgba(62,207,142,.3);border-radius:10px;padding:11px 14px;margin-bottom:12px;font-size:13px;color:#9fe8c6}
-.bar{height:18px;border-radius:4px;background:linear-gradient(90deg,#4f8cff,#7aa9ff);margin:3px 0}
-.row{display:flex;align-items:center;gap:8px;font-size:12.5px;margin-bottom:5px}
-.num{width:26px;text-align:right;color:#9aa3b2;font-variant-numeric:tabular-nums}
-.loading{text-align:center;color:#6f7889;padding:40px 0;font-size:13px}
-table{width:100%;border-collapse:collapse;font-size:12.5px}
-th,td{padding:5px 6px;text-align:left;border-bottom:1px solid #22262f}
-th{color:#9aa3b2;font-weight:500}
-.ball{display:inline-block;width:22px;height:22px;line-height:22px;text-align:center;border-radius:50%;font-size:11px;font-weight:600;color:#fff;margin-right:3px}
-</style>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width,initial-scale=1,maximum-scale=1,user-scalable=no,viewport-fit=cover">
+<meta name="theme-color" content="#0d1117">
+<title>六合智析 · 学术研究版</title>
+<link rel="stylesheet" href="style.css">
 </head>
 <body>
-<h1>开奖数据统计看板</h1>
-<p class="sub">描述性统计与随机性检验 · 数据随页面内置，无需联网请求接口</p>
-<div id="app"><div class="loading">加载中…</div></div>
 
-<script>
-const CRIT = 65.17; // 卡方临界值 df=48, α=0.05
+<div class="topbar">
+  <div class="wrap inner">
+    <div>
+      <div class="brand">六合智析<span class="ver">v3.3</span><span class="yr">2026 马年</span></div>
+    </div>
+    <div class="stat-pill">
+      <div>库内 <b id="topCount">-</b> 期</div>
+      <div>最新 <b id="topLast">-</b></div>
+    </div>
+  </div>
+</div>
 
-async function main() {
-  const recs = await fetch('history.json').then(r => r.json());
-  recs.sort((a, b) => a.period - b.period);
+<div class="wrap">
 
-  const periods = recs.map(r => r.period);
-  const n = recs.length;
+  <div class="tabs">
+    <button class="tab on" data-tab="pred">本期预测</button>
+    <button class="tab" data-tab="backtest">回测验证</button>
+    <button class="tab" data-tab="stats">统计分析</button>
+    <button class="tab" data-tab="records">开奖记录</button>
+  </div>
 
-  // 期号缺口
-  const gaps = [];
-  for (let i = 1; i < periods.length; i++) {
-    const d = periods[i] - periods[i - 1];
-    if (d > 1) gaps.push({ from: periods[i - 1], to: periods[i], missing: d - 1 });
-  }
+  <!-- ============ 本期预测 ============ -->
+  <section id="tab-pred">
+    <div class="card">
+      <div class="card-h">
+        <div class="card-t"><span class="dot"></span>模型设置</div>
+        <div class="card-s">walk-forward · 无未来函数</div>
+      </div>
+      <label class="f">预测模型</label>
+      <select id="modelSel"></select>
+      <div id="modelDesc" class="note small"></div>
+      <div style="margin-top:10px">
+        <label class="f">训练窗口（期）</label>
+        <input id="winSize" type="number" value="60" min="10" max="500">
+      </div>
+      <div style="margin-top:10px">
+        <label class="f">输出码数</label>
+        <div class="seg" id="kSel">
+          <button data-k="7" class="on">7 码</button>
+          <button data-k="10">10 码</button>
+          <button data-k="14">14 码</button>
+          <button data-k="20">20 码</button>
+        </div>
+      </div>
+      <div class="btn-row">
+        <button class="btn p" id="btnPredict">生成预测</button>
+        <button class="btn" id="btnReroll">重新抽样</button>
+      </div>
+    </div>
 
-  // 最近连续段（遗漏值只在段内计算）
-  let segStart = 0;
-  for (let i = 1; i < periods.length; i++) {
-    if (periods[i] - periods[i - 1] > 1) segStart = i;
-  }
-  const cont = recs.slice(segStart);
+    <div class="card" id="predOut">
+      <div class="card-h">
+        <div class="card-t"><span class="dot g"></span>本期预测号码</div>
+        <div class="card-s" id="predMeta"></div>
+      </div>
+      <div id="predBalls"></div>
+      <div class="mini" style="margin-top:12px">
+        <div class="mini-c"><div class="lab">覆盖度</div><div class="val" id="predCov">-</div></div>
+        <div class="mini-c"><div class="lab">期望命中</div><div class="val" id="predExp">-</div></div>
+        <div class="mini-c"><div class="lab">95% 区间</div><div class="val s" id="predCI">-</div></div>
+      </div>
+      <div id="predVerdict"></div>
+      <div class="note small">上述号码为所选统计模型在给定训练窗口下的输出。命中数的理论期望 = 码数 × 7 ÷ 49，与「随机抽同样多码」完全一致。本页同时给出该模型的历史回测 p 值，用于判断其是否真的优于随机。</div>
+    </div>
 
-  const freq = new Array(50).fill(0);
-  recs.forEach(r => [...r.mains, r.special].forEach(x => freq[x]++));
+    <div class="card">
+      <div class="card-h">
+        <div class="card-t"><span class="dot w"></span>号码打分明细</div>
+        <div class="card-s">分数仅用于模型内部排序</div>
+      </div>
+      <div id="scoreList"></div>
+    </div>
+  </section>
 
-  const lastSeen = new Array(50).fill(-1);
-  cont.forEach((r, i) => [...r.mains, r.special].forEach(x => lastSeen[x] = i));
-  const miss = new Array(50).fill(0);
-  for (let k = 1; k <= 49; k++) miss[k] = lastSeen[k] === -1 ? cont.length : cont.length - 1 - lastSeen[k];
+  <!-- ============ 回测验证 ============ -->
+  <section id="tab-backtest" class="hide">
+    <div class="card">
+      <div class="card-h">
+        <div class="card-t"><span class="dot"></span>Walk-Forward 回测</div>
+        <div class="card-s">逐期滚动 · 仅用过去数据</div>
+      </div>
+      <p class="small muted" style="margin:0 0 8px">对每一期 k：只用第 k 期<b>之前</b>的历史训练模型 → 预测第 k 期 → 统计命中数。全部模型在同一批期号上对比，基准为「每期随机抽同样多码」的蒙特卡洛模拟。</p>
+      <div class="grid2">
+        <div>
+          <label class="f">起始期（留出热身）</label>
+          <input id="btStart" type="number" value="30" min="5">
+        </div>
+        <div>
+          <label class="f">蒙特卡洛次数</label>
+          <input id="btSim" type="number" value="2000" min="200" step="200">
+        </div>
+      </div>
+      <div class="btn-row">
+        <button class="btn p" id="btnBacktest">运行回测</button>
+      </div>
+      <div id="btStatus" class="small muted" style="margin-top:8px"></div>
+    </div>
 
-  const r30 = new Array(50).fill(0);
-  recs.slice(-30).forEach(r => [...r.mains, r.special].forEach(x => r30[x]++));
+    <div class="card">
+      <div class="card-h">
+        <div class="card-t"><span class="dot g"></span>模型对比</div>
+        <div class="card-s">命中数均值 vs 随机基线</div>
+      </div>
+      <table id="btTable">
+        <thead><tr><th>模型</th><th class="num">平均命中</th><th class="num">基线</th><th class="num">p 值</th><th>结论</th></tr></thead>
+        <tbody></tbody>
+      </table>
+      <div id="btVerdict"></div>
+    </div>
 
-  const expected = n * 7 / 49;
-  let chi2 = 0;
-  for (let k = 1; k <= 49; k++) { const d = freq[k] - expected; chi2 += d * d / expected; }
+    <div class="card">
+      <div class="card-h">
+        <div class="card-t"><span class="dot w"></span>逐期命中曲线</div>
+        <div class="card-s">当前模型</div>
+      </div>
+      <div id="btChart"></div>
+      <div class="mini" style="margin-top:10px">
+        <div class="mini-c"><div class="lab">回测期数</div><div class="val" id="btN">-</div></div>
+        <div class="mini-c"><div class="lab">总命中</div><div class="val" id="btTot">-</div></div>
+        <div class="mini-c"><div class="lab">最好一期</div><div class="val" id="btBest">-</div></div>
+        <div class="mini-c"><div class="lab">标准差</div><div class="val" id="btSd">-</div></div>
+      </div>
+    </div>
 
-  const nums = [];
-  for (let k = 1; k <= 49; k++) nums.push({ number: k, total: freq[k], r30: r30[k], miss: miss[k] });
+    <div class="card">
+      <div class="card-h">
+        <div class="card-t"><span class="dot"></span>命中数分布</div>
+        <div class="card-s">实测 vs 超几何理论</div>
+      </div>
+      <table id="distTable">
+        <thead><tr><th class="num">命中数</th><th class="num">实测期数</th><th class="num">理论期望</th><th class="num">理论概率</th></tr></thead>
+        <tbody></tbody>
+      </table>
+      <div id="distVerdict"></div>
+    </div>
+  </section>
 
-  const app = document.getElementById('app');
-  let h = '';
+  <!-- ============ 统计分析 ============ -->
+  <section id="tab-stats" class="hide">
+    <div class="card">
+      <div class="card-h">
+        <div class="card-t"><span class="dot"></span>随机性检验</div>
+        <div class="card-s">H0：各号码等概率</div>
+      </div>
+      <div class="mini">
+        <div class="mini-c"><div class="lab">卡方 χ²</div><div class="val" id="stChi">-</div></div>
+        <div class="mini-c"><div class="lab">自由度</div><div class="val" id="stDf">48</div></div>
+        <div class="mini-c"><div class="lab">临界值 α=.05</div><div class="val" id="stCrit">65.17</div></div>
+        <div class="mini-c"><div class="lab">p 值</div><div class="val" id="stP">-</div></div>
+      </div>
+      <div id="stVerdict"></div>
+      <div class="mini" style="margin-top:10px">
+        <div class="mini-c"><div class="lab">游程检验 Z</div><div class="val" id="stRuns">-</div></div>
+        <div class="mini-c"><div class="lab">游程 p 值</div><div class="val" id="stRunsP">-</div></div>
+        <div class="mini-c"><div class="lab">一阶自相关 r</div><div class="val" id="stAc">-</div></div>
+        <div class="mini-c"><div class="lab">自相关判定</div><div class="val s" id="stAcV">-</div></div>
+      </div>
+      <div class="note small">卡方拟合优度检验判断 49 个号码出现频次是否偏离均匀；游程检验判断大小/奇偶序列是否随机；自相关检验判断相邻期号码是否存在关联。三项均不显著时才支持「独立随机」。</div>
+    </div>
 
-  h += `<div class="card"><h2>数据概况</h2>
-    <div class="kv"><span>总期数</span><span>${n}</span></div>
-    <div class="kv"><span>期号范围</span><span>${periods[0]} – ${periods[n - 1]}</span></div>
-    <div class="kv"><span>期望频次/号</span><span>${expected.toFixed(2)}</span></div>
-    <div class="kv"><span>遗漏统计窗口</span><span>第 ${cont[0].period} 期起（${cont.length} 期）</span></div>
-  </div>`;
+    <div class="card">
+      <div class="card-h">
+        <div class="card-t"><span class="dot g"></span>号码频次热力图</div>
+        <div class="card-s">颜色越亮 = 出现越多</div>
+      </div>
+      <div class="grid49" id="heat"></div>
+      <div class="small muted" style="margin-top:8px">每格下方为出现次数，黄色竖线位置为理论期望值。</div>
+    </div>
 
-  if (gaps.length) {
-    h += `<div class="warn"><b>期号缺口：</b>` + gaps.map(g => `第 ${g.from + 1}–${g.to - 1} 期缺失（${g.missing} 期）`).join('；') +
-      `<br>遗漏值仅在最近连续段内计算，缺口前记录不参与</div>`;
-  } else {
-    h += `<div class="ok">期号连续，无缺口</div>`;
-  }
+    <div class="card">
+      <div class="card-h">
+        <div class="card-t"><span class="dot w"></span>遗漏排行 TOP10</div>
+        <div class="card-s">连续未开出期数</div>
+      </div>
+      <div class="bars" id="missBars"></div>
+      <div id="missNote" class="note small"></div>
+    </div>
 
-  h += `<div class="card"><h2>卡方拟合优度检验</h2>
-    <div class="kv"><span>χ² 统计量</span><span>${chi2.toFixed(2)}</span></div>
-    <div class="kv"><span>自由度 df</span><span>48</span></div>
-    <div class="kv"><span>临界值 (α=0.05)</span><span>${CRIT}</span></div>
-  </div>`;
-  h += chi2 > CRIT
-    ? `<div class="warn">χ² &gt; ${CRIT}，<b>拒绝</b>「各号码等概率」的原假设（α=0.05）。</div>`
-    : `<div class="ok">χ² ≤ ${CRIT}，<b>不拒绝</b>「各号码等概率」的原假设（α=0.05）——样本内未检出显著偏离。</div>`;
+    <div class="card">
+      <div class="card-h">
+        <div class="card-t"><span class="dot"></span>波色分布</div>
+        <div class="card-s">红 17 · 蓝 16 · 绿 16</div>
+      </div>
+      <div class="bars" id="colorBars"></div>
+    </div>
 
-  const maxF = Math.max(...nums.map(x => x.total)), minF = Math.min(...nums.map(x => x.total));
-  h += `<div class="card"><h2>号码频次热力图（越高频越亮）</h2><div class="grid">`;
-  nums.forEach(f => {
-    const t = maxF === minF ? .5 : (f.total - minF) / (maxF - minF);
-    h += `<div class="cell" style="background:rgba(79,140,255,${(0.18 + t * 0.82).toFixed(3)})" title="出现 ${f.total} 次">${f.number}</div>`;
-  });
-  h += `</div></div>`;
+    <div class="card">
+      <div class="card-h">
+        <div class="card-t"><span class="dot"></span>生肖分布</div>
+        <div class="card-s">12 生肖</div>
+      </div>
+      <div class="bars" id="zodiacBars"></div>
+    </div>
 
-  const missTop = [...nums].sort((a, b) => b.miss - a.miss).slice(0, 10);
-  const maxM = Math.max(...missTop.map(x => x.miss)) || 1;
-  h += `<div class="card"><h2>遗漏期数 TOP 10</h2>`;
-  missTop.forEach(f => {
-    h += `<div class="row"><span class="num">${f.number}</span><div class="bar" style="width:${(f.miss / maxM * 100).toFixed(1)}%;min-width:4px"></div><span>${f.miss} 期</span></div>`;
-  });
-  h += `</div>`;
+    <div class="card">
+      <div class="card-h">
+        <div class="card-t"><span class="dot"></span>头数 / 尾数分布</div>
+        <div class="card-s">十位 / 个位</div>
+      </div>
+      <div class="bars" id="headBars"></div>
+      <div style="height:10px"></div>
+      <div class="bars" id="tailBars"></div>
+    </div>
+  </section>
 
-  const r30Top = [...nums].sort((a, b) => b.r30 - a.r30).slice(0, 10);
-  const maxR = Math.max(...r30Top.map(x => x.r30)) || 1;
-  h += `<div class="card"><h2>近 30 期频次 TOP 10</h2>`;
-  r30Top.forEach(f => {
-    h += `<div class="row"><span class="num">${f.number}</span><div class="bar" style="width:${(f.r30 / maxR * 100).toFixed(1)}%;min-width:4px;background:linear-gradient(90deg,#3ecf8e,#7ae0b4)"></div><span>${f.r30} 次</span></div>`;
-  });
-  h += `</div>`;
+  <!-- ============ 开奖记录 ============ -->
+  <section id="tab-records" class="hide">
+    <div class="card">
+      <div class="card-h">
+        <div class="card-t"><span class="dot"></span>数据管理</div>
+        <div class="card-s" id="recMeta"></div>
+      </div>
+      <div class="btn-row" style="margin-top:0">
+        <button class="btn g" id="btnAdd">+ 录入开奖</button>
+        <button class="btn" id="btnSync">检查更新</button>
+        <button class="btn" id="btnExport">导出 JSON</button>
+        <button class="btn" id="btnImport">导入 JSON</button>
+        <button class="btn d" id="btnClear">清空本地录入</button>
+      </div>
+      <input type="file" id="fileIn" accept=".json,application/json" style="display:none">
+      <div id="recStatus" class="small muted" style="margin-top:8px"></div>
+    </div>
 
-  const recent = recs.slice(-15).reverse();
-  h += `<div class="card"><h2>最近 15 期</h2><table><tr><th>期号</th><th>日期</th><th>号码</th></tr>`;
-  recent.forEach(r => {
-    const balls = r.mains.map(m => `<span class="ball" style="background:#4f8cff">${m}</span>`).join('') +
-      `<span class="ball" style="background:#e0533d">${r.special}</span>`;
-    h += `<tr><td>${r.period}</td><td>${r.date}</td><td>${balls}</td></tr>`;
-  });
-  h += `</table></div>`;
+    <div class="card">
+      <div class="card-h">
+        <div class="card-t"><span class="dot w"></span>数据体检</div>
+        <div class="card-s">完整性校验</div>
+      </div>
+      <div id="health"></div>
+    </div>
 
-  h += `<div class="card"><h2>说明</h2><p style="font-size:12.5px;color:#9aa3b2;margin:0">开奖为独立随机事件，历史频次与遗漏值对未来结果不具预测力。本页仅呈现描述性统计与假设检验结果，不产出任何投注推荐。</p></div>`;
+    <div class="card">
+      <div class="card-h">
+        <div class="card-t"><span class="dot g"></span>开奖记录</div>
+        <div class="card-s">点击号码可编辑</div>
+      </div>
+      <div id="recList"></div>
+    </div>
+  </section>
 
-  app.innerHTML = h;
-}
+  <div class="foot">
+    六合智析 · 学术研究版 v3.3<br>
+    统计检验与回测框架 · 数据每日 22:00 自动采集<br>
+    <span id="footSrc"></span>
+  </div>
+</div>
 
-main().catch(e => {
-  document.getElementById('app').innerHTML = `<div class="warn">加载失败：${e.message}</div>`;
-});
-</script>
+<!-- 录入/编辑弹窗 -->
+<div class="mask" id="mask">
+  <div class="modal">
+    <h3 id="mTitle">录入开奖</h3>
+    <p class="small muted" style="margin:0 0 6px">正码 6 个（1-49 不重复），特码 1 个</p>
+    <div class="grid2">
+      <div>
+        <label class="f">期号</label>
+        <input id="mPeriod" type="number" placeholder="283">
+      </div>
+      <div>
+        <label class="f">日期</label>
+        <input id="mDate" type="date">
+      </div>
+    </div>
+    <label class="f">正码（6 个）</label>
+    <div class="grid7" id="mMains"></div>
+    <label class="f">特码</label>
+    <input id="mSpec" type="number" placeholder="1-49">
+    <div id="mErr" class="warn hide"></div>
+    <div class="btn-row">
+      <button class="btn p" id="mSave">保存</button>
+      <button class="btn" id="mCancel">取消</button>
+      <button class="btn d hide" id="mDel">删除</button>
+    </div>
+  </div>
+</div>
+
+<script src="data.js"></script>
+<script src="app.js"></script>
 </body>
 </html>

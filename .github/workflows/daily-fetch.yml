@@ -4,6 +4,8 @@ on:
   schedule:
     # UTC 14:00 = 北京时间 22:00
     - cron: '0 14 * * *'
+    # 22:30 补一次，防止源站延迟
+    - cron: '30 14 * * *'
   workflow_dispatch:
 
 jobs:
@@ -23,6 +25,9 @@ jobs:
       - name: 抓取并合并
         run: python3 scripts/fetch.py
 
+      - name: 重建内联数据文件
+        run: python3 scripts/build_data.py
+
       - name: 检查是否有新数据
         id: check
         run: |
@@ -39,6 +44,16 @@ jobs:
         run: |
           git config user.name "github-actions[bot]"
           git config user.email "github-actions[bot]@users.noreply.github.com"
-          git add docs/history.json
+          git add docs/history.json docs/data.js
           git commit -m "chore: 自动同步开奖记录 $(date -u +'%Y-%m-%d %H:%M UTC')"
           git push
+
+      - name: 输出结果
+        if: always()
+        run: |
+          python3 -c "
+          import json
+          d=json.load(open('docs/history.json'))
+          print('库内期数:',len(d))
+          print('最新一期:',d[-1])
+          "
