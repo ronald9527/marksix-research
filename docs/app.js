@@ -390,9 +390,9 @@ function renderPred(pick, sc, key) {
 }
 
 /* ===================== 回测页 ===================== */
-function runAllBacktest() {
+function runAllBacktest(simOverride) {
   var startIdx = parseInt($('btStart').value, 10) || 30;
-  var simN = parseInt($('btSim').value, 10) || 2000;
+  var simN = simOverride || parseInt($('btSim').value, 10) || 2000;
   if (startIdx >= REC.length - 2) { $('btStatus').textContent = '起始期太大，可回测期数不足'; return; }
   $('btStatus').textContent = '正在回测 ' + Object.keys(MODELS).length + ' 个模型，共 ' + (REC.length - startIdx) + ' 期 × ' + simN + ' 次蒙特卡洛…';
   setTimeout(function () {
@@ -768,8 +768,8 @@ function boot() {
 }
 function autoBacktest() {
   try {
-    $('btStatus').textContent = '首次自动回测中…';
-    runAllBacktest();
+    $('btStatus').textContent = '首次自动回测中（快速模式）…';
+    runAllBacktest(800);
   } catch (e) {
     $('btStatus').textContent = '自动回测跳过：' + e.message;
   }
