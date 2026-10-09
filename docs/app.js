@@ -434,7 +434,27 @@ function renderBT(res, K) {
   $('btTot').textContent = cur.total;
   $('btBest').textContent = cur.best.hit + ' (' + cur.best.period + ')';
   $('btSd').textContent = fmt(cur.sd, 3);
+  renderRecent(cur);
   renderDist(cur, K);
+}
+function renderRecent(r) {
+  var rows = '', list = r.hits.slice(-15);
+  list.forEach(function (x) {
+    var picked = '<div class="balls">';
+    x.pick.slice().sort(function (a, b) { return a - b; }).forEach(function (n) {
+      var on = x.actual.indexOf(n) >= 0;
+      picked += ballHTML(n, 'sm' + (on ? '' : ' out'));
+    });
+    picked += '</div>';
+    var act = '<div class="balls">';
+    x.actual.slice().sort(function (a, b) { return a - b; }).forEach(function (n) { act += ballHTML(n, 'sm'); });
+    act += '</div>';
+    rows += '<tr><td class="num">' + x.period + '</td><td>' + picked + '</td><td>' + act +
+      '</td><td class="num"><b style="color:' + (x.hit >= 3 ? '#58a6ff' : (x.hit >= 2 ? '#3fb950' : '#8b949e')) +
+      '">' + x.hit + '</b></td></tr>';
+  });
+  $('btRecent').innerHTML = '<table><thead><tr><th class="num">期号</th><th>模型预测（灰色=未中）</th><th>实际开奖</th><th class="num">命中</th></tr></thead><tbody>' +
+    rows + '</tbody></table>';
 }
 function drawChart(r) {
   var W = 700, H = 180, pad = 22, n = r.hits.length;
