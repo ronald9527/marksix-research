@@ -161,25 +161,22 @@ function rnd() { rndState = (rndState * 1103515245 + 12345) & 0x7fffffff; return
 /* 固定种子保证回测可复现；「重新抽样」按钮可手动换种子 */
 var UNIFORM_SEED = 20261009;
 var MODELS = {
-  uniform: {
-    name: '均匀随机基线', short: '随机',
-    desc: '49 个号码等概率随机抽样（种子固定，结果可复现）。作为对照基准：任何模型若不能显著优于它，即视为无预测力。',
+  repAdj: {
+    name: '重号 + 邻号', short: '重邻',
+    desc: '上期开出的号码给最高分，其 ±1 邻号次之。依据实测：上期号码下期再出概率 16.18%，高于随机 14.29%（重号效应）。',
     score: function (train) {
-      var f = new Array(50).fill(0), r = mulberry32(UNIFORM_SEED);
-      for (var k = 1; k <= 49; k++) f[k] = r();
+      var f = new Array(50).fill(0);
+      if (!train.length) return f;
+      var last = train[train.length - 1].mains.concat([train[train.length - 1].special]);
+      last.forEach(function (n) { f[n] += 1; if (n > 1) f[n - 1] += 0.6; if (n < 49) f[n + 1] += 0.6; });
+      var q = freqOf(train.slice(-20));
+      for (var k = 1; k <= 49; k++) f[k] += q[k] * 0.02;
       return f;
-    }
-  },
-  freq: {
-    name: '全局频次加权', short: '频次',
-    desc: '按训练窗口内各号码出现总次数打分，假设「历史出现多的更可能再出现」（热号策略）。',
-    score: function (train) {
-      var f = freqOf(train); return f;
     }
   },
   ewma: {
     name: '近期指数加权 (λ=0.97)', short: 'EWMA',
-    desc: '对历史频次做指数衰减加权，近期权重更高。经典时间序列平滑方法。',
+    desc: '对历史频次做指数衰减加权，近期权重更高（追热号）。经典时间序列平滑方法。',
     score: function (train) {
       var f = new Array(50).fill(0), L = 0.97, n = train.length;
       train.forEach(function (r, i) {
@@ -189,23 +186,24 @@ var MODELS = {
       return f;
     }
   },
-  miss: {
-    name: '遗漏值倒序（冷号）', short: '遗漏',
-    desc: '按当前遗漏期数打分，遗漏越久分越高。假设「久未开出更可能开出」（赌徒谬误型策略）。',
-    score: function (train) {
-      return missOf(train);
-    }
+  freq: {
+    name: '全局频次加权', short: '频次',
+    desc: '按训练窗口内各号码出现总次数打分（热号策略）。',
+    score: function (train) { return freqOf(train); }
   },
   hot10: {
     name: '近 10 期热度', short: '热度',
     desc: '只统计最近 10 期出现次数，短窗口动量策略。',
-    score: function (train) {
-      return freqOf(train.slice(-10));
-    }
+    score: function (train) { return freqOf(train.slice(-10)); }
+  },
+  miss: {
+    name: '遗漏值倒序（冷号）', short: '遗漏',
+    desc: '按当前遗漏期数打分，遗漏越久分越高（追冷号）。实测中该方向出现率偏低，用于对照。',
+    score: function (train) { return missOf(train); }
   },
   markov: {
     name: '一阶马尔可夫转移', short: '马尔可夫',
-    desc: '统计「上一期开出 a 时，下一期开出 b」的条件频次，以上一期号码为状态做转移打分。序列建模方法。',
+    desc: '统计「上期开出 a 时、下期开出 b」的条件频次，以上一期号码为状态做转移打分。序列建模方法。',
     score: function (train) {
       var T = [], i, j;
       for (i = 0; i <= 49; i++) { T[i] = new Array(50).fill(0); }
@@ -222,6 +220,110 @@ var MODELS = {
           f[j] = s;
         }
       }
+      return f;
+    }
+  },
+  colorWheel: {
+    name: '波色轮转', short: '波色',
+    desc: '按「上期特码波色 → 各波色」的历史转移概率给该波色下所有号码打分（红17/蓝16/绿16）。',
+    score: function (train) {
+      var f = new Array(50).fill(0), cols = ['红', '蓝', '绿'], i;
+      if (train.length < 3) return freqOf(train);
+      var tr = { '红': { '红': 0, '蓝': 0, '绿': 0 }, '蓝': { '红': 0, '蓝': 0, '绿': 0 }, '绿': { '红': 0, '蓝': 0, '绿': 0 } };
+      for (i = 1; i < train.length; i++) {
+        tr[colorName(train[i - 1].special)][colorName(train[i].special)]++;
+      }
+      var lc = colorName(train[train.length - 1].special);
+      var tot = tr[lc]['红'] + tr[lc]['蓝'] + tr[lc]['绿'] || 1;
+      var q = freqOf(train.slice(-20));
+      for (var k = 1; k <= 49; k++) f[k] = tr[lc][colorName(k)] / tot + q[k] * 0.01;
+      return f;
+    }
+  },
+  zodiac: {
+    name: '生肖方向', short: '生肖',
+    desc: '按各生肖近期出现频次相对期望的比值打分，热度高的生肖下所有号码同权重加分。',
+    score: function (train) {
+      var f = new Array(50).fill(0), zc = {}, i;
+      ZORDER.forEach(function (z) { zc[z] = 0; });
+      train.forEach(function (r) { r.mains.concat([r.special]).forEach(function (n) { var z = zodiacOf(n); if (z) zc[z]++; }); });
+      var tot = 0; ZORDER.forEach(function (z) { tot += zc[z]; });
+      var q = freqOf(train.slice(-20));
+      for (i = 1; i <= 49; i++) {
+        var z = zodiacOf(i), cnt = (S.zodiacNums && S.zodiacNums[z]) ? S.zodiacNums[z].length : 4;
+        var ratio = (tot * cnt / 49) ? zc[z] / (tot * cnt / 49) : 1;
+        f[i] = ratio + q[i] * 0.01;
+      }
+      return f;
+    }
+  },
+  headTail: {
+    name: '头尾方向', short: '头尾',
+    desc: '按十位（头数 0-4）与个位（尾数 0-9）的近期热度比值打分，热头热尾号码加分。',
+    score: function (train) {
+      var f = new Array(50).fill(0), hc = {}, tc = {}, i;
+      for (i = 0; i <= 4; i++) hc[i] = 0;
+      for (i = 0; i <= 9; i++) tc[i] = 0;
+      train.forEach(function (r) { r.mains.concat([r.special]).forEach(function (n) { hc[headOf(n)]++; tc[tailOf(n)]++; }); });
+      var ht = 0, tt = 0;
+      for (i = 0; i <= 4; i++) ht += hc[i];
+      for (i = 0; i <= 9; i++) tt += tc[i];
+      var q = freqOf(train.slice(-20));
+      for (i = 1; i <= 49; i++) {
+        var hr = hc[headOf(i)] / Math.max(1, ht * (headOf(i) === 4 ? 4 : 10) / 49);
+        var tr = tc[tailOf(i)] / Math.max(1, tt * (tailOf(i) === 0 ? 4 : 5) / 49);
+        f[i] = hr + tr + q[i] * 0.01;
+      }
+      return f;
+    }
+  },
+  sumZone: {
+    name: '和值区间聚焦', short: '和值',
+    desc: '以训练期和值均值定中心，给靠近该中心的号码加权（7 码之和的理论均值为 175，标准差 37.4）。',
+    score: function (train) {
+      var f = new Array(50).fill(0), sums = [], i;
+      train.forEach(function (r) { sums.push(r.mains.concat([r.special]).reduce(function (a, b) { return a + b; }, 0)); });
+      var m = sums.length ? sums.reduce(function (a, b) { return a + b; }, 0) / sums.length : 175;
+      var c = m / NPICK, sg = 15;
+      var q = freqOf(train.slice(-20));
+      for (i = 1; i <= 49; i++) {
+        f[i] = Math.exp(-Math.pow(i - c, 2) / (2 * sg * sg)) + q[i] * 0.02;
+      }
+      return f;
+    }
+  },
+  zone: {
+    name: '区间回补', short: '区间',
+    desc: '把 1-49 分四区（1-12/13-24/25-36/37-49），近期出号偏少的区整体加分，押注区间回补。',
+    score: function (train) {
+      var f = new Array(50).fill(0), z = [[1, 12], [13, 24], [25, 36], [37, 49]], cnt = [0, 0, 0, 0], i;
+      var recent = train.slice(-15);
+      recent.forEach(function (r) {
+        r.mains.concat([r.special]).forEach(function (n) {
+          for (var k = 0; k < 4; k++) if (n >= z[k][0] && n <= z[k][1]) cnt[k]++;
+        });
+      });
+      var tot = cnt[0] + cnt[1] + cnt[2] + cnt[3] || 1;
+      var q = freqOf(train.slice(-20));
+      for (i = 1; i <= 49; i++) {
+        for (var k2 = 0; k2 < 4; k2++) {
+          if (i >= z[k2][0] && i <= z[k2][1]) {
+            var width = z[k2][1] - z[k2][0] + 1;
+            var ratio = (tot * width / 49) ? cnt[k2] / (tot * width / 49) : 1;
+            f[i] = 2 - ratio + q[i] * 0.01;
+          }
+        }
+      }
+      return f;
+    }
+  },
+  uniform: {
+    name: '随机抽样参照（统计基线）', short: '基线',
+    baseline: true, predict: false,
+    desc: '49 个号码等概率随机抽样（种子固定，可复现）。不用于预测，仅作为统计参照：任何模型若不能显著优于它，即视为无预测力。',
+    score: function (train) {
+      var f = new Array(50).fill(0), r = mulberry32(UNIFORM_SEED);
+      for (var k = 1; k <= 49; k++) f[k] = r();
       return f;
     }
   }
@@ -246,7 +348,23 @@ function drawNums(count, rng) { /* 从 1..49 抽 count 个不重复（复用数�
   }
   return out;
 }
-function runBacktest(recs, modelKey, startIdx, K, simN) {
+/* 蒙特卡洛随机基线：所有模型共用一次，避免重复计算 */
+function mcBaseline(recs, startIdx, K, simN) {
+  var rng = mulberry32(987654321), n = recs.length - startIdx, means = [], tot = 0, s2, i, q;
+  if (n <= 0) return { means: [0], mean: 0 };
+  for (s2 = 0; s2 < simN; s2++) {
+    var t = 0;
+    for (i = startIdx; i < recs.length; i++) {
+      var pk = drawNums(K, rng);
+      var ac = recs[i].mains.concat([recs[i].special]);
+      for (q = 0; q < K; q++) if (ac.indexOf(pk[q]) >= 0) t++;
+    }
+    var mm = t / n; means.push(mm); tot += mm;
+  }
+  means.sort(function (a, b) { return a - b; });
+  return { means: means, mean: tot / simN };
+}
+function runBacktest(recs, modelKey, startIdx, K, base) {
   var model = MODELS[modelKey], hits = [], i;
   for (i = startIdx; i < recs.length; i++) {
     var train = recs.slice(Math.max(0, i - winSize()), i);
@@ -262,25 +380,12 @@ function runBacktest(recs, modelKey, startIdx, K, simN) {
   var va = 0; hits.forEach(function (x) { va += (x.hit - mean) * (x.hit - mean); });
   var sd = n > 1 ? Math.sqrt(va / (n - 1)) : 0;
 
-  /* 随机基线蒙特卡洛：每次模拟对全部期各随机抽 K 码，求平均命中 */
-  var rng = mulberry32(12345), baseMeans = [], bTot = 0;
-  for (var s = 0; s < simN; s++) {
-    var t = 0;
-    for (i = startIdx; i < recs.length; i++) {
-      var pk = drawNums(K, rng);
-      var ac = recs[i].mains.concat([recs[i].special]);
-      for (var q = 0; q < K; q++) if (ac.indexOf(pk[q]) >= 0) t++;
-    }
-    var mm = t / n; baseMeans.push(mm); bTot += mm;
-  }
-  var baseMean = bTot / simN;
-  baseMeans.sort(function (a, b) { return a - b; });
-  var ge = 0;
-  for (i = 0; i < simN; i++) if (baseMeans[i] >= mean - 1e-12) ge++;
-  var p = (ge + 1) / (simN + 1);
+  var bm = base.means, ge = 0;
+  for (i = 0; i < bm.length; i++) if (bm[i] >= mean - 1e-12) ge++;
+  var p = (ge + 1) / (bm.length + 1);
   return {
-    model: modelKey, name: model.name, n: n, mean: mean, sd: sd, total: tot,
-    baseMean: baseMean, p: p, hits: hits,
+    model: modelKey, name: model.name, baseline: !!model.baseline, n: n, mean: mean, sd: sd, total: tot,
+    baseMean: base.mean, p: p, hits: hits,
     best: hits.reduce(function (a, b) { return b.hit > a.hit ? b : a; }, { hit: -1, period: 0 }),
     theory: K * NPICK / N
   };
@@ -319,9 +424,10 @@ function winSize() { var v = parseInt($('winSize').value, 10); return isNaN(v) ?
 function initModels() {
   var sel = $('modelSel'), h = '';
   Object.keys(MODELS).forEach(function (k) {
+    if (MODELS[k].predict === false) return;
     h += '<option value="' + k + '">' + MODELS[k].name + '</option>';
   });
-  sel.innerHTML = h; sel.value = 'markov';
+  sel.innerHTML = h; sel.value = 'repAdj';
   sel.onchange = function () { $('modelDesc').textContent = MODELS[sel.value].desc; };
   $('modelDesc').textContent = MODELS[sel.value].desc;
 
@@ -394,31 +500,35 @@ function runAllBacktest(simOverride) {
   var startIdx = parseInt($('btStart').value, 10) || 30;
   var simN = simOverride || parseInt($('btSim').value, 10) || 2000;
   if (startIdx >= REC.length - 2) { $('btStatus').textContent = '起始期太大，可回测期数不足'; return; }
-  $('btStatus').textContent = '正在回测 ' + Object.keys(MODELS).length + ' 个模型，共 ' + (REC.length - startIdx) + ' 期 × ' + simN + ' 次蒙特卡洛…';
+  $('btStatus').textContent = '正在回测 ' + Object.keys(MODELS).length + ' 个模型，共 ' + (REC.length - startIdx) + ' 期…';
   setTimeout(function () {
     var res = {};
-    Object.keys(MODELS).forEach(function (k) { res[k] = runBacktest(REC, k, startIdx, curK, simN); });
+    var base = mcBaseline(REC, startIdx, curK, simN);
+    Object.keys(MODELS).forEach(function (k) { res[k] = runBacktest(REC, k, startIdx, curK, base); });
     window.__bt = res;
     renderBT(res, curK);
-    $('btStatus').textContent = '回测完成：' + (REC.length - startIdx) + ' 期，码数 ' + curK + '，蒙特卡洛 ' + simN + ' 次。';
+    $('btStatus').textContent = '回测完成：' + (REC.length - startIdx) + ' 期，码数 ' + curK + '，蒙特卡洛基线 ' + simN + ' 次。';
     predict();
   }, 30);
 }
 function renderBT(res, K) {
   var tb = $('btTable').querySelector('tbody'), rows = '';
-  Object.keys(res).forEach(function (k) {
+  var keys = Object.keys(res).sort(function (a, b) { return res[b].mean - res[a].mean; });
+  keys.forEach(function (k) {
     var r = res[k], sig = r.p < 0.05;
-    rows += '<tr><td>' + r.name + '</td><td class="num">' + fmt(r.mean, 3) + '</td><td class="num">' +
-      fmt(r.baseMean, 3) + '</td><td class="num">' + pText(r.p) + '</td><td>' +
-      '<span style="color:' + (sig ? '#7ee787' : '#e3b341') + '">' + (sig ? '显著' : '不显著') + '</span></td></tr>';
+    rows += '<tr' + (r.baseline ? ' style="opacity:.55"' : '') + '><td>' + r.name +
+      (r.baseline ? ' <span class="muted small">（参照）</span>' : '') + '</td><td class="num">' + fmt(r.mean, 3) +
+      '</td><td class="num">' + fmt(r.baseMean, 3) + '</td><td class="num">' + pText(r.p) + '</td><td>' +
+      (r.baseline ? '<span class="muted">—</span>' :
+        '<span style="color:' + (sig ? '#7ee787' : '#e3b341') + '">' + (sig ? '显著' : '不显著') + '</span>') + '</td></tr>';
   });
   tb.innerHTML = rows;
 
-  var sigs = Object.keys(res).filter(function (k) { return res[k].p < 0.05; });
+  var sigs = Object.keys(res).filter(function (k) { return !res[k].baseline && res[k].p < 0.05; });
   var vh;
   if (sigs.length === 0) {
     vh = '<div class="verdict ns"><b>结论：全部模型均未显著优于随机基线</b>' +
-      '在 α=0.05 水平下，' + Object.keys(res).length + ' 个模型的平均命中率与「随机抽 ' + K +
+      '在 α=0.05 水平下，' + (Object.keys(res).length - 1) + ' 个模型的平均命中率与「随机抽 ' + K +
       ' 码」无统计差异。这与「开奖为独立随机事件」的假设一致——历史信息不携带可用于预测下一期的信号。' +
       '该结果本身即为有效的学术研究结论。</div>';
   } else {
@@ -765,6 +875,7 @@ function boot() {
     ' · 源站 amkkjj.com';
   predict(); renderStats(); renderRecords();
   setTimeout(autoBacktest, 300);
+  if (window.MSX && window.MSX.onData) window.MSX.onData();
 }
 function autoBacktest() {
   try {
@@ -774,6 +885,14 @@ function autoBacktest() {
     $('btStatus').textContent = '自动回测跳过：' + e.message;
   }
 }
+window.MSX = {
+  get REC() { return REC; },
+  S: S, ZORDER: ZORDER,
+  colorOf: colorOf, colorName: colorName, zodiacOf: zodiacOf, wuxOf: wuxOf,
+  headOf: headOf, tailOf: tailOf, fmt: fmt, pText: pText,
+  chi2P: chi2P, normP2: normP2, freqOf: freqOf, missOf: missOf, gapsOf: gapsOf,
+  MODELS: MODELS, onData: null
+};
 if (document.readyState === 'loading') document.addEventListener('DOMContentLoaded', boot); else boot();
 
 })();
