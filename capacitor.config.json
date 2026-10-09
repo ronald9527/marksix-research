@@ -1,6 +1,6 @@
 {
   "appId": "com.marksix.research",
-  "appName": "开奖统计看板",
+  "appName": "六合智析",
   "webDir": "dist",
   "server": {
     "url": "https://ronald9527.github.io/marksix-research/",
