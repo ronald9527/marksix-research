@@ -3,7 +3,7 @@
   "appName": "开奖统计看板",
   "webDir": "dist",
   "server": {
-    "url": "https://marksix-research.eggmarket-qy.workers.dev",
+    "url": "https://ronald9527.github.io/marksix-research/",
     "cleartext": false,
     "androidScheme": "https"
   },
