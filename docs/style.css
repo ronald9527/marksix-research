@@ -139,3 +139,47 @@ input:focus,select:focus{outline:none;border-color:var(--acc)}
 .seg button:last-child{border-right:none}
 .seg button.on{background:#58a6ff1a;color:var(--acc)}
 svg.chart{width:100%;height:auto;display:block}
+
+/* ===== 走势图 ===== */
+.trend-wrap{overflow-x:auto;-webkit-overflow-scrolling:touch;margin-top:8px;border:1px solid var(--border);border-radius:8px}
+table.trend{border-collapse:separate;border-spacing:0;font-size:11px;min-width:1180px}
+table.trend th,table.trend td{padding:0;border:none}
+table.trend thead th{position:sticky;top:0;background:#161b22;z-index:3;font-size:9px;color:var(--muted);font-weight:600;height:22px}
+table.trend .tp{
+  position:sticky;left:0;background:#161b22;z-index:2;width:38px;min-width:38px;
+  font-size:10px;color:var(--muted);text-align:left;padding-left:4px;border-right:1px solid var(--border);
+}
+table.trend thead .tp{z-index:4}
+table.trend .th2{width:22px;min-width:22px;text-align:center}
+table.trend td.tc{position:relative;width:22px;min-width:22px;height:24px;text-align:center;vertical-align:middle}
+table.trend td.tc:nth-child(even){background:#ffffff05}
+table.trend .td{
+  display:inline-flex;align-items:center;justify-content:center;
+  width:19px;height:19px;border-radius:50%;font-size:10px;font-weight:700;color:#fff;line-height:1;
+}
+table.trend .td.r{background:var(--rb)} table.trend .td.b{background:var(--bb)} table.trend .td.g{background:var(--gb)}
+table.trend .td.sp{box-shadow:0 0 0 1.5px #d29922}
+table.trend .tdmiss{font-size:9px;color:#484f58}
+table.trend td.ln::before{
+  content:'';position:absolute;left:50%;top:-13px;width:1px;height:26px;
+  background:#58a6ff40;transform:translateX(-50%);
+}
+
+/* ===== 走势带 ===== */
+.band-row{display:flex;align-items:center;gap:3px;margin-bottom:4px}
+.bp{width:34px;flex:0 0 auto;font-size:11px;color:var(--muted)}
+.bsq{
+  width:22px;height:22px;border-radius:5px;display:flex;align-items:center;justify-content:center;
+  font-size:10px;font-weight:700;color:#fff;flex:0 0 auto;
+}
+.bsq.r{background:var(--rb)} .bsq.b{background:var(--bb)} .bsq.g{background:var(--gb)}
+.bsq.sp{box-shadow:0 0 0 1.5px #d29922}
+.zsq{
+  width:26px;height:24px;border-radius:5px;display:flex;align-items:center;justify-content:center;
+  font-size:12px;font-weight:700;background:var(--card2);border:1px solid var(--border);color:var(--fg);flex:0 0 auto;
+}
+.znum{
+  width:24px;height:22px;border-radius:50%;display:flex;align-items:center;justify-content:center;
+  font-size:10px;font-weight:700;color:#fff;flex:0 0 auto;margin-left:2px;
+}
+.znum.r{background:var(--rb)} .znum.b{background:var(--bb)} .znum.g{background:var(--gb)}
