@@ -25,6 +25,8 @@
 
   <div class="tabs">
     <button class="tab on" data-tab="pred">本期预测</button>
+    <button class="tab" data-tab="trend">走势图</button>
+    <button class="tab" data-tab="direct">方向分析</button>
     <button class="tab" data-tab="backtest">回测验证</button>
     <button class="tab" data-tab="stats">统计分析</button>
     <button class="tab" data-tab="records">开奖记录</button>
@@ -35,7 +37,7 @@
     <div class="card">
       <div class="card-h">
         <div class="card-t"><span class="dot"></span>模型设置</div>
-        <div class="card-s">walk-forward · 无未来函数</div>
+        <div class="card-s">方向型模型 · walk-forward</div>
       </div>
       <label class="f">预测模型</label>
       <select id="modelSel"></select>
@@ -71,15 +73,157 @@
         <div class="mini-c"><div class="lab">95% 区间</div><div class="val s" id="predCI">-</div></div>
       </div>
       <div id="predVerdict"></div>
-      <div class="note small">上述号码为所选统计模型在给定训练窗口下的输出。命中数的理论期望 = 码数 × 7 ÷ 49，与「随机抽同样多码」完全一致。本页同时给出该模型的历史回测 p 值，用于判断其是否真的优于随机。</div>
     </div>
 
     <div class="card">
       <div class="card-h">
-        <div class="card-t"><span class="dot w"></span>号码打分明细</div>
+        <div class="card-t"><span class="dot w"></span>本期方向</div>
+        <div class="card-s">各维度统计倾向</div>
+      </div>
+      <div id="predDir"></div>
+    </div>
+
+    <div class="card">
+      <div class="card-h">
+        <div class="card-t"><span class="dot"></span>号码打分明细</div>
         <div class="card-s">分数仅用于模型内部排序</div>
       </div>
       <div id="scoreList"></div>
+    </div>
+  </section>
+
+  <!-- ============ 走势图 ============ -->
+  <section id="tab-trend" class="hide">
+    <div class="card">
+      <div class="card-h">
+        <div class="card-t"><span class="dot"></span>号码走势图</div>
+        <div class="card-s">左右滑动查看</div>
+      </div>
+      <div class="seg" id="trendN">
+        <button data-n="15">近 15 期</button>
+        <button data-n="30" class="on">近 30 期</button>
+        <button data-n="50">近 50 期</button>
+        <button data-n="999">全部</button>
+      </div>
+      <div class="note small" style="margin-top:8px">每行为一期，1-49 列。彩色圆点为该期开出的号码，金色为特码；灰色连线的斜向延伸可看出号码的连出与回落。</div>
+      <div class="trend-wrap" id="trendGrid"></div>
+    </div>
+
+    <div class="card">
+      <div class="card-h">
+        <div class="card-t"><span class="dot g"></span>指标走势</div>
+        <div class="card-s">最近 40 期</div>
+      </div>
+      <div class="seg" id="lineSel">
+        <button data-l="special" class="on">特码</button>
+        <button data-l="sum">和值</button>
+        <button data-l="span">跨度</button>
+        <button data-l="repeat">重号数</button>
+        <button data-l="odd">奇数个数</button>
+        <button data-l="adj">邻号数</button>
+      </div>
+      <div id="lineChart"></div>
+      <div id="lineStat" class="mini" style="margin-top:10px"></div>
+    </div>
+
+    <div class="card">
+      <div class="card-h">
+        <div class="card-t"><span class="dot w"></span>波色走势带</div>
+        <div class="card-s">每期 7 码的波色构成</div>
+      </div>
+      <div id="colorBand"></div>
+      <div class="small muted" style="margin-top:6px">红 / 蓝 / 绿 三色方块按当期开出顺序排列，最右为特码。</div>
+    </div>
+
+    <div class="card">
+      <div class="card-h">
+        <div class="card-t"><span class="dot"></span>生肖走势带</div>
+        <div class="card-s">每期特码生肖</div>
+      </div>
+      <div id="zodiacBand"></div>
+    </div>
+  </section>
+
+  <!-- ============ 方向分析 ============ -->
+  <section id="tab-direct" class="hide">
+    <div class="card">
+      <div class="card-h">
+        <div class="card-t"><span class="dot"></span>数据实测发现</div>
+        <div class="card-s">实测 vs 随机理论</div>
+      </div>
+      <div id="findings"></div>
+    </div>
+
+    <div class="card">
+      <div class="card-h">
+        <div class="card-t"><span class="dot g"></span>遗漏回落分析</div>
+        <div class="card-s">遗漏多久会出</div>
+      </div>
+      <table id="missBack">
+        <thead><tr><th>遗漏区间</th><th class="num">下期出现率</th><th class="num">理论</th><th class="num">样本</th><th>倾向</th></tr></thead>
+        <tbody></tbody>
+      </table>
+      <div id="missBackV"></div>
+    </div>
+
+    <div class="card">
+      <div class="card-h">
+        <div class="card-t"><span class="dot w"></span>结构指标</div>
+        <div class="card-s">重号 / 连号 / 邻号</div>
+      </div>
+      <table id="structTbl">
+        <thead><tr><th>指标</th><th class="num">实测均值</th><th class="num">随机理论</th><th>偏离</th></tr></thead>
+        <tbody></tbody>
+      </table>
+      <div id="structV"></div>
+    </div>
+
+    <div class="card">
+      <div class="card-h">
+        <div class="card-t"><span class="dot"></span>波色转移矩阵</div>
+        <div class="card-s">上期特码波色 → 本期</div>
+      </div>
+      <div id="colorTrans"></div>
+    </div>
+
+    <div class="card">
+      <div class="card-h">
+        <div class="card-t"><span class="dot"></span>生肖方向</div>
+        <div class="card-s">出现频次 vs 期望</div>
+      </div>
+      <div class="bars" id="dirZodiac"></div>
+      <div id="dirZodiacV" class="note small"></div>
+    </div>
+
+    <div class="card">
+      <div class="card-h">
+        <div class="card-t"><span class="dot"></span>头数 / 尾数方向</div>
+        <div class="card-s">十位 / 个位热度</div>
+      </div>
+      <div class="bars" id="dirHead"></div>
+      <div style="height:8px"></div>
+      <div class="bars" id="dirTail"></div>
+      <div id="dirTailV" class="note small"></div>
+    </div>
+
+    <div class="card">
+      <div class="card-h">
+        <div class="card-t"><span class="dot w"></span>区间分布</div>
+        <div class="card-s">四区实际占比</div>
+      </div>
+      <div class="bars" id="dirZone"></div>
+      <div id="dirZoneV" class="note small"></div>
+    </div>
+
+    <div class="card">
+      <div class="card-h">
+        <div class="card-t"><span class="dot"></span>和值 / 跨度分布</div>
+        <div class="card-s">直方图</div>
+      </div>
+      <div id="sumHist"></div>
+      <div style="height:8px"></div>
+      <div id="spanHist"></div>
+      <div id="sumV" class="note small"></div>
     </div>
   </section>
 
@@ -90,7 +234,7 @@
         <div class="card-t"><span class="dot"></span>Walk-Forward 回测</div>
         <div class="card-s">逐期滚动 · 仅用过去数据</div>
       </div>
-      <p class="small muted" style="margin:0 0 8px">对每一期 k：只用第 k 期<b>之前</b>的历史训练模型 → 预测第 k 期 → 统计命中数。全部模型在同一批期号上对比，基准为「每期随机抽同样多码」的蒙特卡洛模拟。</p>
+      <p class="small muted" style="margin:0 0 8px">对每一期 k：只用第 k 期<b>之前</b>的历史训练模型 → 预测第 k 期 → 统计命中数。所有模型在同一批期号上对比，并与随机抽样的蒙特卡洛分布比较得出 p 值。</p>
       <div class="grid2">
         <div>
           <label class="f">起始期（留出热身）</label>
@@ -179,7 +323,7 @@
         <div class="card-s">颜色越亮 = 出现越多</div>
       </div>
       <div class="grid49" id="heat"></div>
-      <div class="small muted" style="margin-top:8px">每格下方为出现次数，黄色竖线位置为理论期望值。</div>
+      <div class="small muted" style="margin-top:8px">每格下方为出现次数。</div>
     </div>
 
     <div class="card">
@@ -205,16 +349,6 @@
         <div class="card-s">12 生肖</div>
       </div>
       <div class="bars" id="zodiacBars"></div>
-    </div>
-
-    <div class="card">
-      <div class="card-h">
-        <div class="card-t"><span class="dot"></span>头数 / 尾数分布</div>
-        <div class="card-s">十位 / 个位</div>
-      </div>
-      <div class="bars" id="headBars"></div>
-      <div style="height:10px"></div>
-      <div class="bars" id="tailBars"></div>
     </div>
   </section>
 
@@ -255,7 +389,7 @@
 
   <div class="foot">
     六合智析 · 学术研究版 v3.3<br>
-    统计检验与回测框架 · 数据每日 22:00 自动采集<br>
+    走势 / 方向分析 / 统计检验与回测框架 · 数据每日 22:00 自动采集<br>
     <span id="footSrc"></span>
   </div>
 </div>
@@ -290,5 +424,6 @@
 
 <script src="data.js"></script>
 <script src="app.js"></script>
+<script src="trend.js"></script>
 </body>
 </html>
