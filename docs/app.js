@@ -235,14 +235,14 @@ function topK(score, k) {
 }
 
 /* ===================== 回测 ===================== */
-function drawNums(count, rng) { /* 从 1..49 抽 count 个不重复 */
-  var pool = [], i;
-  for (i = 1; i <= 49; i++) pool.push(i);
-  var out = [];
+var _pool = new Array(49);
+function drawNums(count, rng) { /* 从 1..49 抽 count 个不重复（复用数组，避免高频 GC） */
+  var i, out = [];
+  for (i = 0; i < 49; i++) _pool[i] = i + 1;
   for (i = 0; i < count; i++) {
     var j = i + Math.floor(rng() * (49 - i));
-    var t = pool[i]; pool[i] = pool[j]; pool[j] = t;
-    out.push(pool[i]);
+    var t = _pool[i]; _pool[i] = _pool[j]; _pool[j] = t;
+    out.push(_pool[i]);
   }
   return out;
 }
@@ -349,7 +349,8 @@ function predict() {
 }
 function renderPred(pick, sc, key) {
   var model = MODELS[key];
-  $('predMeta').textContent = model.name + ' · 训练 ' + lastPred.train + ' 期' + (key === 'uniform' ? ' · 种子 ' + UNIFORM_SEED : '');
+  $('predMeta').textContent = '第 ' + (REC.length ? REC[REC.length - 1].period + 1 : 1) + ' 期 · ' + model.name +
+    ' · 训练 ' + lastPred.train + ' 期' + (key === 'uniform' ? ' · 种子 ' + UNIFORM_SEED : '');
   $('predBalls').innerHTML = ballRow(pick);
   var K = pick.length, exp = K * NPICK / N;
   $('predCov').textContent = fmt(K / N * 100, 1) + '%';
@@ -378,11 +379,12 @@ function renderPred(pick, sc, key) {
   var arr = [];
   for (var n = 1; n <= 49; n++) arr.push({ n: n, s: sc[n] });
   arr.sort(function (a, b) { return b.s - a.s; });
+  var missT = missOf(REC);
   var rows = '';
   arr.slice(0, 15).forEach(function (x, i) {
     rows += '<tr><td class="num">' + (i + 1) + '</td><td>' + ballHTML(x.n, 'sm') +
       '</td><td>' + zodiacOf(x.n) + ' / ' + colorName(x.n) + ' / ' + wuxOf(x.n) +
-      '</td><td class="num">' + fmt(x.s, 3) + '</td><td class="num">' + missOf(REC)[x.n] + '</td></tr>';
+      '</td><td class="num">' + fmt(x.s, 3) + '</td><td class="num">' + missT[x.n] + '</td></tr>';
   });
   $('scoreList').innerHTML = '<table><thead><tr><th class="num">#</th><th>号码</th><th>生肖/波色/五行</th><th class="num">分数</th><th class="num">遗漏</th></tr></thead><tbody>' + rows + '</tbody></table>';
 }
@@ -742,6 +744,15 @@ function boot() {
   $('footSrc').textContent = '内置数据 ' + (S.history || []).length + ' 期 · 更新于 ' + (S.updated || '-') +
     ' · 源站 amkkjj.com';
   predict(); renderStats(); renderRecords();
+  setTimeout(autoBacktest, 300);
+}
+function autoBacktest() {
+  try {
+    $('btStatus').textContent = '首次自动回测中…';
+    runAllBacktest();
+  } catch (e) {
+    $('btStatus').textContent = '自动回测跳过：' + e.message;
+  }
 }
 if (document.readyState === 'loading') document.addEventListener('DOMContentLoaded', boot); else boot();
 
